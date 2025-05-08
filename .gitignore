@@ -1,0 +1,5 @@
+# Virtual env
+.venv/
+# Poetry artefacts (nel caso riappaiano)
+poetry.lock
+pyproject.toml
