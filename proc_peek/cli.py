@@ -14,7 +14,7 @@ def main(ctx: typer.Context):
     """[bold cyan]proc‑peek[/] – mini process monitor.[/]
     Run without sub‑command to launch TUI."""
     if ctx.invoked_subcommand is None:
-        from .tui import run_tui  # lazy‑import
+        from tui import run_tui  # lazy‑import
 
         run_tui()
 
