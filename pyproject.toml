@@ -1,0 +1,30 @@
+[tool.poetry]
+name = "proc-peek"
+version = "0.1.0"
+description = "Interactive cross‑platform process monitor (TUI) built with Python, Rich, and Textual. Windows‑first, but runs on macOS/Linux too."
+authors = ["<your‑name> <your@email>"]
+license = "MIT"
+readme = "README.md"
+packages = [{include = "proc_peek"}]
+
+[tool.poetry.dependencies]
+python = "^3.9"
+psutil = "^5.9"
+rich = "^13.7"
+textual = "^0.41"
+typer = "^0.12"
+colorama = "^0.4.6"  # Color handling on Windows terminals
+
+[tool.poetry.group.dev.dependencies]
+pytest = "^8.2"
+pytest-cov = "^5.0"
+black = "^24.3"
+ruff = "^0.4.7"        # Linter + formatter helper
+mypy = "^1.10"
+
+[tool.poetry.scripts]
+proc-peek = "proc_peek.cli:app"
+
+[build-system]
+requires = ["poetry-core>=1.7"]
+build-backend = "poetry.core.masonry.api"
