@@ -121,6 +121,15 @@ class ProcessTable(Static):
         # Clear the table and add rows
         table.clear()
 
+        # Verifica se il processo selezionato esiste ancora
+        pid_exists = any(proc["pid"] == self.selected_pid for proc in self.processes)
+        if not pid_exists and self.selected_pid > 0:
+            # Processo non più esistente, resetta la selezione
+            self.selected_pid = -1
+            # Aggiorna la vista dei dettagli
+            self.app.query_one(ProcessDetail).update_process_detail(-1)
+
+        # Popola la tabella
         for proc in self.processes:
             row_key = str(proc["pid"])
             table.add_row(
@@ -132,7 +141,7 @@ class ProcessTable(Static):
                 key=row_key,
             )
 
-            # If this row is selected, highlight it
+            # Se questa riga è selezionata, evidenziala
             if proc["pid"] == self.selected_pid:
                 table.cursor_row = row_key
 
@@ -224,7 +233,6 @@ class ProcessDetail(Static):
         self.query_one("#process_detail_content").update(panel)
 
     def on_button_pressed(self, event: Button.Pressed) -> None:
-        """Handle button presses"""
         button_id = event.button.id
 
         if button_id == "refresh_detail":
@@ -232,63 +240,113 @@ class ProcessDetail(Static):
 
         elif button_id == "kill_process":
             if self.pid > 0:
-                success = kill_process(self.pid)
-                if success:
-                    self.app.notify(f"Process {self.pid} terminated", title="Success")
-                    # Refresh the process list
-                    self.app.query_one(ProcessTable).update_process_list()
-                    # Clear the detail view
-                    self.pid = -1
-                    self.update_process_detail(-1)
-                else:
-                    self.app.notify(
-                        f"Failed to terminate process {self.pid}",
-                        title="Error",
-                        severity="error",
-                    )
+                # Get process name
+                process_name = ""
+                for proc in self.app.query_one(ProcessTable).processes:
+                    if proc["pid"] == self.pid:
+                        process_name = proc["name"]
+                        break
+
+                # Show confirmation dialog
+                async def show_dialog():
+                    dialog = KillConfirmDialog(self.pid, process_name)
+                    result = await self.app.push_screen(dialog)
+
+                    if result and isinstance(result, tuple):
+                        action, force = result
+                        if action == "terminate":
+                            result = kill_process(self.pid, force=force)
+                            if result["success"]:
+                                self.app.notify(
+                                    f"Process {self.pid} terminated", title="Success"
+                                )
+                                # Refresh the process list
+                                self.app.query_one(ProcessTable).update_process_list()
+                                # Clear the detail view
+                                self.pid = -1
+                                self.update_process_detail(-1)
+                            else:
+                                self.app.notify(
+                                    f"Failed to terminate process: {result['error']}",
+                                    title="Error",
+                                    severity="error",
+                                )
+
+                self.app.run_worker(show_dialog())
+
+
+from textual.containers import Center
+from textual.widgets import Button, Label, Static
+from textual.screen import ModalScreen
+
+
+class KillConfirmDialog(ModalScreen):
+    """Dialog for confirming process termination"""
+
+    def __init__(self, pid: int, process_name: str):
+        super().__init__()
+        self.pid = pid
+        self.process_name = process_name
+
+    def compose(self) -> ComposeResult:
+        yield Center(
+            Panel(
+                Vertical(
+                    Label(f"Are you sure you want to terminate process?"),
+                    Label(f"PID: {self.pid} - {self.process_name}", classes="detail"),
+                    Horizontal(
+                        Button("Cancel", id="cancel", variant="primary"),
+                        Button("Terminate", id="terminate", variant="error"),
+                        Button("Force Kill", id="force_kill", variant="error"),
+                        classes="buttons",
+                    ),
+                    classes="confirm_dialog",
+                ),
+                title="Confirm Process Termination",
+            ),
+            id="confirm_dialog_center",
+        )
+
+    def on_button_pressed(self, event: Button.Pressed) -> None:
+        button_id = event.button.id
+
+        if button_id == "cancel":
+            self.dismiss(False)
+        elif button_id == "terminate":
+            self.dismiss(("terminate", False))
+        elif button_id == "force_kill":
+            self.dismiss(("terminate", True))
 
 
 class ProcessMonitorApp(App):
     """The main Textual application for proc-peek"""
 
     CSS = """
-    ProcessTable {
-        height: 1fr;
-        min-height: 10;
-    }
-    
-    #sort_buttons {
-        dock: top;
-        height: 3;
-        background: $panel;
-        padding: 1 0 0 0;
-    }
-    
-    .sort_button {
-        margin: 0 1 0 0;
-    }
-    
-    SystemInfoPanel {
-        height: auto;
-        min-height: 8;
-    }
-    
-    ProcessDetail {
-        height: auto;
-        min-height: 15;
-    }
-    
-    #detail_buttons {
-        dock: bottom;
-        height: 3;
-        background: $panel;
-        padding: 1 0 0 0;
-    }
-    
-    #refresh_detail {
-        margin: 0 1 0 0;
-    }
-    """
+/* CSS esistente... */
+
+.confirm_dialog {
+    width: 50;
+    height: auto;
+    padding: 1;
+}
+
+.confirm_dialog .detail {
+    margin: 1 0;
+}
+
+.confirm_dialog .buttons {
+    margin-top: 1;
+    align-horizontal: center;
+}
+
+.confirm_dialog Button {
+    margin: 0 1;
+}
+
+#confirm_dialog_center {
+    align: center middle;
+}
+"""
 
     TITLE = "proc-peek: Process Monitor"
     SUB_TITLE = "Press q to quit, ? for help"
@@ -305,6 +363,31 @@ class ProcessMonitorApp(App):
         """Set up the application"""
         # Make the process table get focus by default
         self.query_one("#process_table").focus()
+
+
+def update_process_detail(self, pid: int) -> None:
+    """Update the process detail panel with information about the given PID"""
+    self.pid = pid
+
+    if pid <= 0:
+        self.query_one("#process_detail_content").update(
+            Panel("Select a process to view details", title="Process Detail")
+        )
+        return
+
+    # Get detailed process info
+    info = get_process_info(pid)
+
+    # Controlla se il processo è accessibile
+    if info["name"] == "[Process not available]":
+        self.query_one("#process_detail_content").update(
+            Panel(
+                "Process information not available.\nThe process may no longer exist or you may not have permission to access it.",
+                title=f"Process Detail - PID {pid}",
+                border_style="red",
+            )
+        )
+        return
 
 
 def run_tui():

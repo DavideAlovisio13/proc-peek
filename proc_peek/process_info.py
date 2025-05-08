@@ -129,55 +129,85 @@ def get_process_list(sort_by: str = "cpu") -> List[Dict[str, Any]]:
 
 def get_system_info() -> Dict[str, Any]:
     """Get overall system information"""
-    cpu_percent = psutil.cpu_percent(interval=0.1)
-    memory = psutil.virtual_memory()
-    swap = psutil.swap_memory()
-    disk = psutil.disk_usage("/")
+    try:
+        cpu_percent = psutil.cpu_percent(interval=0.1)
+        memory = psutil.virtual_memory()
+        swap = psutil.swap_memory()
 
-    if hasattr(psutil, "sensors_temperatures") and callable(
-        getattr(psutil, "sensors_temperatures")
-    ):
+        # Usa il percorso appropriato in base al sistema operativo
+        import os
+
+        if os.name == "nt":  # Windows
+            disk_path = os.environ.get("SYSTEMDRIVE", "C:")
+        else:  # Linux, macOS, ecc.
+            disk_path = "/"
+
         try:
-            temps = psutil.sensors_temperatures()
-            # Just get the first temperature reading if available
-            temperature = (
-                next(iter(next(iter(temps.values()))), None) if temps else None
-            )
-            temp_value = temperature.current if temperature else None
-        except:
+            disk = psutil.disk_usage(disk_path)
+        except Exception as e:
+            print(f"Error getting disk usage for {disk_path}: {e}")
+            # Valori predefiniti se non è possibile ottenere l'uso del disco
+            disk = type("obj", (object,), {"total": 0, "used": 0, "percent": 0})
+
+        # Ottieni le temperature se disponibili
+        if hasattr(psutil, "sensors_temperatures") and callable(
+            getattr(psutil, "sensors_temperatures")
+        ):
+            try:
+                temps = psutil.sensors_temperatures()
+                # Prendi la prima lettura di temperatura disponibile
+                temperature = (
+                    next(iter(next(iter(temps.values()))), None) if temps else None
+                )
+                temp_value = temperature.current if temperature else None
+            except Exception as e:
+                print(f"Error getting temperature info: {e}")
+                temp_value = None
+        else:
             temp_value = None
-    else:
-        temp_value = None
 
-    boot_time = psutil.boot_time()
-    uptime_seconds = time.time() - boot_time
+        boot_time = psutil.boot_time()
+        uptime_seconds = time.time() - boot_time
 
-    return {
-        "cpu": {
-            "percent": cpu_percent,
-            "count_logical": psutil.cpu_count(),
-            "count_physical": psutil.cpu_count(logical=False) or 1,
-        },
-        "memory": {
-            "total": memory.total,
-            "available": memory.available,
-            "percent": memory.percent,
-            "used": memory.used,
-        },
-        "swap": {
-            "total": swap.total,
-            "used": swap.used,
-            "percent": swap.percent,
-        },
-        "disk": {
-            "total": disk.total,
-            "used": disk.used,
-            "percent": disk.percent,
-        },
-        "temperature": temp_value,
-        "boot_time": boot_time,
-        "uptime_seconds": uptime_seconds,
-    }
+        return {
+            "cpu": {
+                "percent": cpu_percent,
+                "count_logical": psutil.cpu_count(),
+                "count_physical": psutil.cpu_count(logical=False) or 1,
+            },
+            "memory": {
+                "total": memory.total,
+                "available": memory.available,
+                "percent": memory.percent,
+                "used": memory.used,
+            },
+            "swap": {
+                "total": swap.total,
+                "used": swap.used,
+                "percent": swap.percent,
+            },
+            "disk": {
+                "total": disk.total,
+                "used": disk.used,
+                "percent": disk.percent,
+                "path": disk_path,  # Aggiunto il percorso
+            },
+            "temperature": temp_value,
+            "boot_time": boot_time,
+            "uptime_seconds": uptime_seconds,
+        }
+    except Exception as e:
+        print(f"Error getting system info: {e}")
+        # Restituisci dati di fallback se qualcosa va storto
+        return {
+            "cpu": {"percent": 0, "count_logical": 0, "count_physical": 0},
+            "memory": {"total": 0, "available": 0, "percent": 0, "used": 0},
+            "swap": {"total": 0, "used": 0, "percent": 0},
+            "disk": {"total": 0, "used": 0, "percent": 0, "path": "/"},
+            "temperature": None,
+            "boot_time": 0,
+            "uptime_seconds": 0,
+        }
 
 
 def format_bytes(bytes_value: int) -> str:
@@ -205,16 +235,34 @@ def format_time_delta(seconds: float) -> str:
         return f"{seconds}s"
 
 
-def kill_process(pid: int) -> bool:
+def kill_process(pid: int, force: bool = False) -> Dict[str, Any]:
     """
-    Kill a process by PID
+    Kill or terminate a process by PID
+
+    Args:
+        pid: Process ID to kill
+        force: If True, use kill() instead of terminate()
 
     Returns:
-        True if successful, False otherwise
+        Dictionary with success status and error message if any
     """
     try:
         proc = psutil.Process(pid)
-        proc.kill()
-        return True
-    except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess):
-        return False
+
+        if force:
+            proc.kill()
+        else:
+            proc.terminate()
+
+        return {"success": True, "error": None}
+    except psutil.NoSuchProcess:
+        return {"success": False, "error": "Process does not exist"}
+    except psutil.AccessDenied:
+        return {
+            "success": False,
+            "error": "Access denied (try running as administrator)",
+        }
+    except psutil.ZombieProcess:
+        return {"success": False, "error": "Process is a zombie process"}
+    except Exception as e:
+        return {"success": False, "error": str(e)}
