@@ -191,6 +191,17 @@ class ProcessDetail(Static):
         # Get detailed process info
         info = get_process_info(pid)
 
+        # Controlla se il processo è accessibile
+        if info["name"] == "[Process not available]":
+            self.query_one("#process_detail_content").update(
+                Panel(
+                    "Process information not available.\nThe process may no longer exist or you may not have permission to access it.",
+                    title=f"Process Detail - PID {pid}",
+                    border_style="red",
+                )
+            )
+            return
+
         # Format time
         created_time = (
             time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(info["created_time"]))
@@ -322,7 +333,38 @@ class ProcessMonitorApp(App):
     """The main Textual application for proc-peek"""
 
     CSS = """
-/* CSS esistente... */
+#process_table {
+    height: 1fr;
+    margin: 1 0;
+}
+
+.sort_button {
+    margin-right: 1;
+    width: auto;
+}
+
+#sort_buttons {
+    margin: 0 0 1 0;
+}
+
+#system_info {
+    margin: 1 0;
+    height: auto;
+}
+
+#process_detail {
+    margin: 1 0;
+    height: auto;
+    min-height: 10;
+}
+
+#detail_buttons {
+    margin-top: 1;
+}
+
+#detail_buttons Button {
+    margin-right: 1;
+}
 
 .confirm_dialog {
     width: 50;
@@ -363,31 +405,6 @@ class ProcessMonitorApp(App):
         """Set up the application"""
         # Make the process table get focus by default
         self.query_one("#process_table").focus()
-
-
-def update_process_detail(self, pid: int) -> None:
-    """Update the process detail panel with information about the given PID"""
-    self.pid = pid
-
-    if pid <= 0:
-        self.query_one("#process_detail_content").update(
-            Panel("Select a process to view details", title="Process Detail")
-        )
-        return
-
-    # Get detailed process info
-    info = get_process_info(pid)
-
-    # Controlla se il processo è accessibile
-    if info["name"] == "[Process not available]":
-        self.query_one("#process_detail_content").update(
-            Panel(
-                "Process information not available.\nThe process may no longer exist or you may not have permission to access it.",
-                title=f"Process Detail - PID {pid}",
-                border_style="red",
-            )
-        )
-        return
 
 
 def run_tui():

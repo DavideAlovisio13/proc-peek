@@ -4,8 +4,13 @@ Process information gathering module
 
 import os
 import time
+import logging
 import psutil
 from typing import List, Dict, Any, Optional
+
+# Configurazione logging di base
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger("proc_peek")
 
 
 def get_process_info(pid: int) -> Dict[str, Any]:
@@ -135,8 +140,6 @@ def get_system_info() -> Dict[str, Any]:
         swap = psutil.swap_memory()
 
         # Usa il percorso appropriato in base al sistema operativo
-        import os
-
         if os.name == "nt":  # Windows
             disk_path = os.environ.get("SYSTEMDRIVE", "C:")
         else:  # Linux, macOS, ecc.
@@ -145,26 +148,29 @@ def get_system_info() -> Dict[str, Any]:
         try:
             disk = psutil.disk_usage(disk_path)
         except Exception as e:
-            print(f"Error getting disk usage for {disk_path}: {e}")
+            logger.error(f"Error getting disk usage for {disk_path}: {e}")
             # Valori predefiniti se non è possibile ottenere l'uso del disco
             disk = type("obj", (object,), {"total": 0, "used": 0, "percent": 0})
 
         # Ottieni le temperature se disponibili
+        temp_value = None
         if hasattr(psutil, "sensors_temperatures") and callable(
             getattr(psutil, "sensors_temperatures")
         ):
             try:
                 temps = psutil.sensors_temperatures()
                 # Prendi la prima lettura di temperatura disponibile
-                temperature = (
-                    next(iter(next(iter(temps.values()))), None) if temps else None
-                )
-                temp_value = temperature.current if temperature else None
+                if temps and len(temps) > 0:
+                    first_sensor = next(iter(temps.values()), [])
+                    if first_sensor and len(first_sensor) > 0:
+                        temperature = first_sensor[0]
+                        temp_value = (
+                            temperature.current
+                            if hasattr(temperature, "current")
+                            else None
+                        )
             except Exception as e:
-                print(f"Error getting temperature info: {e}")
-                temp_value = None
-        else:
-            temp_value = None
+                logger.error(f"Error getting temperature info: {e}")
 
         boot_time = psutil.boot_time()
         uptime_seconds = time.time() - boot_time
@@ -197,7 +203,7 @@ def get_system_info() -> Dict[str, Any]:
             "uptime_seconds": uptime_seconds,
         }
     except Exception as e:
-        print(f"Error getting system info: {e}")
+        logger.error(f"Error getting system info: {e}")
         # Restituisci dati di fallback se qualcosa va storto
         return {
             "cpu": {"percent": 0, "count_logical": 0, "count_physical": 0},
