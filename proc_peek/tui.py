@@ -403,8 +403,11 @@ class ProcessMonitorApp(App):
 
     def on_mount(self) -> None:
         """Set up the application"""
+
         # Make the process table get focus by default
-        self.query_one("#process_table").focus()
+        # Utilizza un selettore più specifico o il widget diretto
+        process_table = self.query_one(ProcessTable)
+        process_table.query_one("#process_table").focus()
 
 
 def run_tui():
